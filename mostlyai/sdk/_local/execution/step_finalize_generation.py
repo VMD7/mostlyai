@@ -14,6 +14,7 @@
 import logging
 import uuid
 import zipfile
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -414,7 +415,8 @@ def create_generation_schema(
         # create LocalFileContainer
         container = LocalFileContainer()
         model_label = f"{table.name}:tabular"
-        location = str(job_workspace_dir / model_label / "SyntheticData")
+        model_label_win = f"{table.name}_tabular"
+        location = str(job_workspace_dir / model_label_win if sys.platform.startswith("win") else model_label / "SyntheticData")
         container.set_location(location)
         if step == "pull_context_data":
             columns = None  # HACK: read lazily prefixed columns from parquet file

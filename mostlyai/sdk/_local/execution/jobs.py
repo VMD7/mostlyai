@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import sys
 import logging
 import shutil
 import traceback
@@ -148,6 +149,8 @@ def _mark_failed(resource: Generator | SyntheticDataset, resource_dir: Path):
 
 
 def _copy_model(generator_dir: Path, model_label: str, workspace_dir: Path):
+    if sys.platform.startswith("win"):
+        model_label = model_label.replace(":", "_")
     model_path = generator_dir / "ModelStore" / model_label
     shutil.copytree(model_path, workspace_dir / "ModelStore")
 
@@ -257,6 +260,10 @@ class Execution:
             self._resource_dir = self._home_dir / "synthetic-datasets" / synthetic_dataset.id
             self._job_workspace_dir = self._home_dir / "in_progress" / synthetic_dataset.id
         self._job_workspace_dir.mkdir(parents=True)
+
+        # Check OS type
+        self.is_windows = sys.platform.startswith("win")
+
         # set up logging
         logging.basicConfig(
             filename=(self._resource_dir / "job.log").absolute(),
@@ -316,9 +323,10 @@ class Execution:
         generator = self._generator
         model_type = ModelType.tabular if task.type == TaskType.train_tabular else ModelType.language
         model_label = f"{task.target_table_name}:{model_type.value.lower()}"
+        model_label_win = f"{task.target_table_name}_{model_type.value.lower()}"
         tgt_table = next(t for t in generator.tables if t.name == task.target_table_name)
         generator_dir = self._home_dir / "generators" / generator.id
-        workspace_dir = self._job_workspace_dir / model_label
+        workspace_dir = self._job_workspace_dir / model_label_win if self.is_windows else model_label
         workspace_dir.mkdir(parents=True, exist_ok=True)
         update_progress_fn = partial(LocalProgressCallback, resource_path=generator_dir, model_label=model_label)
 
@@ -421,7 +429,8 @@ class Execution:
             )
 
             model_label = f"{step.target_table_name}:{model_type.value.lower()}"
-            workspace_dir = self._job_workspace_dir / model_label
+            model_label_win = f"{step.target_table_name}_{model_type.value.lower()}"
+            workspace_dir = self._job_workspace_dir / model_label_win if self.is_windows else model_label
             workspace_dir.mkdir(exist_ok=True)
 
             update_progress = partial(

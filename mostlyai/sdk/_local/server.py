@@ -27,6 +27,7 @@ import uvicorn
 from mostlyai.sdk._local.routes import Routes
 
 import os
+import sys
 
 
 class LocalServer:
@@ -49,14 +50,21 @@ class LocalServer:
         if not os.access(self.home_dir, os.R_OK) or not os.access(self.home_dir, os.W_OK):
             raise PermissionError(f"Cannot read/write to {self.home_dir}")
         self.port = port
+
+        # Check OS type
+        self.is_windows = sys.platform.startswith("win")
+
+        # If running on Windows, we have to use a port (UDS is not supported)
+        if self.is_windows and self.port is None:
+            self.port = 8000
+
         # binding to all interfaces (0.0.0.0) is required for docker use case
         self.host = "0.0.0.0" if port is not None else None
-        self.uds = (
+        self.uds = None if self.is_windows else (
             tempfile.NamedTemporaryFile(prefix=".mostlyai-", suffix=".sock", delete=False).name
-            if port is None
-            else None
+            if self.port is None else None
         )
-        self.base_url = "http://127.0.0.1" + (f":{port}" if port else "")
+        self.base_url = f"http://127.0.0.1:{self.port}" if self.port else "http://127.0.0.1"
         self._app = FastAPI(
             root_path="/api/v2",
             title="Synthetic Data SDK ✨",
@@ -78,7 +86,8 @@ class LocalServer:
             os.remove(self.uds)
 
     def _create_server(self):
-        self._clear_socket_file()
+        if not self.is_windows:
+            self._clear_socket_file()
         config = uvicorn.Config(
             self._app, host=self.host, port=self.port, uds=self.uds, log_level="error", reload=False
         )
@@ -94,7 +103,8 @@ class LocalServer:
             self._thread = Thread(target=self._run_server, daemon=True)
             self._thread.start()
             # make sure the socket file is cleaned up on exit
-            atexit.register(self._clear_socket_file)
+            if not self.is_windows:
+                atexit.register(self._clear_socket_file)
             # give the server a moment to start
             time.sleep(0.5)
 
